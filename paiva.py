@@ -12,6 +12,7 @@ import config
 import db
 import llm
 import mittarit
+import kynnys
 import notify
 import rajat
 import salkku
@@ -103,6 +104,7 @@ def aja_paiva(paiva, malli, markkina, sal, env, hae_llm=None):
                 _kirjaa_kutsu(sal, paiva, rooli, malli, e.kaytto)   # kelvoton vastaus kuluttaa silti paivakiintiota
             tulos["virhe"] = "%s: %s" % (type(e).__name__, e)
             ehdotus = None
+    ehdotus = kynnys.suodata(sal, markkina, paiva, ehdotus, sallitut)   # no-trade band (oletus pois)
     sim = salkku.suorita_paiva(sal, markkina, paiva, ehdotus, sallitut)
     tulos["sim"] = sim
     return tulos

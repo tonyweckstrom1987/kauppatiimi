@@ -13,6 +13,7 @@ import sqlite3
 import statistics
 from datetime import date, datetime, timedelta, timezone
 
+import kynnys as kyn
 import mittarit as mit
 import rajat
 import salkku
@@ -182,7 +183,7 @@ class _Nakyma:
         return self._d.sulut(symbol, d_ms, n)
 
 
-def _aja(tehdas, data, alku, loppu, _lupa=None):
+def _aja(tehdas, data, alku, loppu, _lupa=None, kynnys_pp=None):
     """Sisainen ajo. Kieltaytyy lukitusta jaksosta ellei kutsuja ole holdout_arvioi. Palauttaa (arvot_alkupaoma_mukana, kauppoja)."""
     if loppu >= holdout_alku() and _lupa is not _HOLDOUT_LUPA:
         raise Holdoutvirhe("jakso ylittaa lukitun loppujakson (%s alkaen)" % holdout_alku())
@@ -192,6 +193,7 @@ def _aja(tehdas, data, alku, loppu, _lupa=None):
     for p in _paivat(alku, loppu):
         sallitut = data.universum(_ms(p))
         ehd = strat(nak, p, sallitut)
+        ehd = kyn.suodata(sal, data.con, p, ehd, set(sallitut), kynnys_pp)
         salkku.suorita_paiva(sal, data.con, p, ehd, set(sallitut))
     arvot = [rajat.ALKUPAOMA] + [r[0] for r in sal.execute("SELECT arvo FROM arvot ORDER BY paiva")]
     kauppoja = sal.execute("SELECT COUNT(*) FROM kaupat").fetchone()[0]
@@ -199,10 +201,10 @@ def _aja(tehdas, data, alku, loppu, _lupa=None):
     return arvot, kauppoja
 
 
-def aja(tehdas, data, alku, loppu, rek=None, nimi="?", parametrit=None, jakso="kehitys"):
+def aja(tehdas, data, alku, loppu, rek=None, nimi="?", parametrit=None, jakso="kehitys", kynnys_pp=None):
     if loppu >= holdout_alku():
         raise Holdoutvirhe("jakso ylittaa lukitun loppujakson (%s alkaen); kayta holdout_arvioi()" % holdout_alku())
-    arvot, kauppoja = _aja(tehdas, data, alku, loppu)
+    arvot, kauppoja = _aja(tehdas, data, alku, loppu, kynnys_pp=kynnys_pp)
     m = mit.mittarit(arvot)
     if rek is not None:
         kirjaa(rek, nimi, parametrit or {}, jakso, alku, loppu, m, kauppoja)
