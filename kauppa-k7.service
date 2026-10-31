@@ -15,4 +15,3 @@ ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
 ReadWritePaths=/srv/kauppa/data
-ReadWritePaths=-/srv/kauppa/havainnot
