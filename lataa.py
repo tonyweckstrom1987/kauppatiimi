@@ -10,6 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 import config
 import db
 import lahde
+import silmukka
 
 
 def loki(*a):
@@ -177,6 +178,12 @@ def main():
     except lahde.Verkkovirhe as e:
         loki("VERKKOVIRHE:", e)
         return 2
+    if silmukka.kaytossa():
+        try:
+            loki("datapyynnot:", silmukka.hae_pyynnot(silmukka.PYYNTO_POLKU, silmukka.LISADATA_DB, lahde.http_hae,
+                                                      datetime.now(timezone.utc).date()))
+        except (OSError, lahde.Estetty):
+            loki("datapyynnot: ohitettu")
     loki("VALMIS uusia hintarivej %d, funding %d, virheita %d" % (yht["hinnat"], yht["funding"], len(yht["virheet"])))
     for v in yht["virheet"][:30]:
         loki("  VIRHE", v)

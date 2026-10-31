@@ -15,6 +15,7 @@ import mittarit
 import notify
 import rajat
 import salkku
+import silmukka
 import taulukko
 import tapahtumat
 import tarkistus
@@ -69,7 +70,7 @@ def _kirjaa_kriitikko(sal, paiva, painot, kritiikki):
         pass
 
 
-def aja_paiva(paiva, malli, markkina, sal, env, hae_llm=None):
+def aja_paiva(paiva, malli, markkina, sal, env, hae_llm=None, malli_avain=None):
     """Ajaa yhden simulaatiopaivan. Palauttaa raporttidictin. Fail closed: virhe = ei kauppoja, tila sailyy."""
     tulos = {"paiva": paiva.isoformat(), "malli": malli, "analyytikko": None, "kriitikko": None, "virhe": None}
     btc_edell = markkina.execute("SELECT 1 FROM hinnat WHERE symbol='BTCUSDT' AND ts=?", (_ms(paiva) - PV,)).fetchone()
@@ -87,7 +88,14 @@ def aja_paiva(paiva, malli, markkina, sal, env, hae_llm=None):
     if not tulos["virhe"]:
         rooli = "analyytikko"
         try:
-            a, kaytto = agentit.kysy_analyytikko(teksti, omistukset, malli, env, hae_llm)
+            a, kaytto = agentit.kysy_analyytikko(teksti, omistukset, malli, env, hae_llm,
+                                                 silmukka.havainnot_analyytikolle(malli_avain, paiva),   # oletuksena "" (silmukka pois / ei pro)
+                                                 silmukka.analyytikko_ohje(malli_avain))
+            if silmukka.kaytossa() and malli_avain == silmukka.PRO_AVAIN and "datapyynto" in a:
+                try:
+                    silmukka.kirjaa_pyynto(silmukka.PYYNTO_POLKU, a["datapyynto"], paiva)
+                except OSError:
+                    pass   # kirjaus ei saa kaataa ajoa
             _kirjaa_kutsu(sal, paiva, "analyytikko", malli, kaytto)
             tulos["analyytikko"] = a
             tulos["keksitty"] = len(tarkistus.tarkista_perustelu(a.get("perustelu"), teksti))   # vain havainto, ei vaikuta kauppoihin
@@ -201,7 +209,7 @@ def main():
     for p in paivat:
         alkoi = time.monotonic()
         try:
-            t = aja_paiva(p, malli, markkina, sal, env)
+            t = aja_paiva(p, malli, markkina, sal, env, malli_avain=a.malli)
         except salkku.Datavirhe as e:
             msg = "Kauppatiimi (%s) %s: DATAVIRHE, keskeytetty: %s" % (malli, p, e)
             print(msg)

@@ -13,6 +13,7 @@ import mittarit
 import notify
 import rajat
 import salkku
+import silmukka
 
 MIN_PV_JOHTOPAATOS = 28  # tata lyhyemmalla historialla ei sanota kumpi malli on parempi
 HAVAINNOT_MAX = 1500     # doc 67: havainnot.md on enintaan ~1500 merkkia (menee agenttien kontekstiin)
@@ -127,6 +128,34 @@ def havainnot_teksti(tanaan, salkut, tiedot, markkina):
     return teksti
 
 
+SILMUKKA_MIN_KRIITIKKOPAIVIA = 10   # alle taman ei kirjata "kriitikko auttoi/ei auttanut"
+
+
+def silmukka_havainnot(tanaan, salkut, tiedot, markkina):
+    """Viikkoretron mitatut luvut rakenteisiksi havainnoiksi (silmukka.py). Vain forward-paperidata (aloituspaivasta eteenpain),
+    ei holdoutia. Jokainen havainto viittaa mitattuun lukuun ja otoskokoon; liian lyhyesta datasta ei kirjata mitaan."""
+    ulos = []
+    for nimi in sorted(salkut):
+        t, s = tiedot.get(nimi), salkut[nimi]
+        if s is None or not t or not t["alku"]:
+            continue
+        pv = (date.fromisoformat(t["paiva"]) - date.fromisoformat(t["alku"])).days + 1
+        if pv < MIN_PV_JOHTOPAATOS:
+            continue
+        k = kriitikon_vaikutus(s["kriitikko"], markkina)
+        if k["arvo_paivia"] >= SILMUKKA_MIN_KRIITIKKOPAIVIA:
+            vaite = "%s: kriitikko %s" % (nimi, "auttoi" if k["arvo"] > 0 else "ei auttanut")
+            ulos.append(silmukka.tee_havainto("retro", vaite, [{"nimi": "kriitikon_arvo", "arvo": k["arvo"], "yksikko": "%-yks"}],
+                                              k["arvo_paivia"], "forward-paperi, ilman kuluja", tanaan, "retro|kriitikko|%s" % nimi))
+        n = len(s["paatokset"])
+        if n:
+            kulut = sum(x[5] + x[6] for x in s["kaupat"])
+            ulos.append(silmukka.tee_havainto("retro", "%s: kulut paatosta kohti" % nimi,
+                                              [{"nimi": "kulut_per_paatos", "arvo": kulut / n, "yksikko": "USDT"}],
+                                              n, "forward-paperi", tanaan, "retro|kulut|%s" % nimi))
+    return ulos
+
+
 def kirjoita_havainnot(polku, teksti):
     """Ylikirjoittaa tiedoston atomisesti (kirjoitus tmp-tiedostoon samassa hakemistossa, sitten os.replace)."""
     tmp = polku + ".tmp"
@@ -177,7 +206,7 @@ def vertailut(markkina, aloitus, viimeisin):
     return ulos
 
 
-def raportti(data_polku, salkut, tanaan, pysaytys_polku=None, havainnot_polku=None):
+def raportti(data_polku, salkut, tanaan, pysaytys_polku=None, havainnot_polku=None, silmukka_polku=None):
     rivit = ["Kauppatiimi viikkoretro (%s)" % tanaan.isoformat()]
     tiedot, raaka = {}, {}
     for nimi, polku in sorted(salkut.items()):
@@ -227,6 +256,15 @@ def raportti(data_polku, salkut, tanaan, pysaytys_polku=None, havainnot_polku=No
                 markkina.close()
         except (sqlite3.Error, OSError) as e:
             rivit.append("havaintoja ei voitu kirjoittaa (%s)" % type(e).__name__)
+    if silmukka_polku and silmukka.kaytossa():
+        try:
+            markkina = _ro(data_polku)
+            try:
+                silmukka.kirjaa_havainnot(silmukka_polku, silmukka_havainnot(tanaan, raaka, tiedot, markkina), tanaan)
+            finally:
+                markkina.close()
+        except (sqlite3.Error, OSError, silmukka.Havaintovirhe) as e:
+            rivit.append("silmukan havaintoja ei voitu kirjoittaa (%s)" % type(e).__name__)
     if pysaytys_polku and os.path.exists(pysaytys_polku):
         rivit.append("KILL SWITCH PAALLA: ajot pysaytetty")
     return "\n".join(rivit)
@@ -238,7 +276,7 @@ def main():
     ap.add_argument("--ei-tg", action="store_true")
     a = ap.parse_args()
     tanaan = datetime.now(timezone.utc).date()
-    msg = raportti(config.DB_POLKU, rajat.SALKUT, tanaan, rajat.PYSAYTYS, HAVAINNOT_POLKU)
+    msg = raportti(config.DB_POLKU, rajat.SALKUT, tanaan, rajat.PYSAYTYS, HAVAINNOT_POLKU, silmukka.HAVAINTO_POLKU)
     print(msg)
     if not a.ei_tg:
         try:
