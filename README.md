@@ -23,6 +23,11 @@ This is a learning and portfolio project. **Nothing here is financial advice and
   but lost 42 % to 72 % once the universe was rebuilt point-in-time. The selection bias was far larger than the survivorship bias.
 - No tested strategy has beaten buy-and-hold BTC on both return and Sharpe ratio.
 
+## A/B statistics
+
+`python3 ab_tilasto.py` compares the flash and pro portfolios (read-only): daily-return difference, Sharpe, max drawdown,
+paired block-bootstrap CI and the number of days needed for significance. Tests: `test_ab_tilasto.py` (synthetic data).
+
 ## Tests
 
 ```
