@@ -16,6 +16,7 @@ This is a learning and portfolio project. **Nothing here is financial advice and
 - **Agents** (`agentit.py`, `paiva.py`, `k7.py`): LLM calls are strictly JSON-in/JSON-out, data is passed as untrusted blocks, and
   every run is capped in calls and cost.
 - **Ops** (`sykemittari.py`, `retro.py`, systemd units): health checks, weekly retrospective, Telegram notifications.
+- **Verokirjanpito** (`raportti.py`): paivaraportin ja retron rivi "Realisoitunut tulos (paperi, FIFO)" + `python3 -m raportti vero 2026 [flash|pro]`. Kutsuu vain `kirjanpito.fifo` ja `vuosiyhteenveto`.
 
 ## Findings so far (October 2026)
 
