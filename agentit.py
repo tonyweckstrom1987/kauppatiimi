@@ -45,7 +45,10 @@ def jasenna_analyytikko(teksti):
     """Palauttaa {'en_tieda': True, 'syy': ..} tai {'paino': {...}, 'perustelu': .., 'luottamus': ..}."""
     o = pura_json(teksti)
     if o.get("en_tieda") is True:
-        return {"en_tieda": True, "syy": str(o.get("syy", ""))[:300]}
+        ulos = {"en_tieda": True, "syy": str(o.get("syy", ""))[:300]}
+        if "datapyynto" in o:
+            ulos["datapyynto"] = o["datapyynto"]
+        return ulos
     p = o.get("paino")
     if not isinstance(p, dict):
         raise Vastausvirhe("paino puuttuu")
@@ -56,9 +59,12 @@ def jasenna_analyytikko(teksti):
         painot = {s: float(w) for s, w in p.items()}
     except (OverflowError, ValueError):
         raise Vastausvirhe("paino liian suuri")
-    return {"paino": painot,
+    ulos = {"paino": painot,
             "perustelu": str(o.get("perustelu", ""))[:500],
             "luottamus": o.get("luottamus") if o.get("luottamus") in ("matala", "keskitaso", "korkea") else "matala"}
+    if "datapyynto" in o:
+        ulos["datapyynto"] = o["datapyynto"]   # raaka; silmukka.tee_pyynto validoi (huono pyynto ei kaada ajoa)
+    return ulos
 
 
 def jasenna_kriitikko(teksti):
@@ -77,9 +83,13 @@ def jasenna_kriitikko(teksti):
     return {"paatos": paatos, "kerroin": kerroin, "ongelmat": ong}
 
 
-def kysy_analyytikko(taulukko, omistukset, malli, env, hae=None):
-    viestit = [{"role": "system", "content": ANALYYTIKKO},
-               {"role": "user", "content": "%s\n<salkku>\n%s\n</salkku>" % (taulukko, omistukset)}]
+def kysy_analyytikko(taulukko, omistukset, malli, env, hae=None, havainnot="", ohje=""):
+    """havainnot: valmis <havainnot>-lohko (tyhja = ei lisata); ohje: lisapromptti datapyynnolle (tyhja = ei lisata). Molemmat tulevat silmukka.py:sta."""
+    sisalto = "%s\n<salkku>\n%s\n</salkku>" % (taulukko, omistukset)
+    if havainnot:
+        sisalto += "\n" + havainnot
+    viestit = [{"role": "system", "content": ANALYYTIKKO + ohje},
+               {"role": "user", "content": sisalto}]
     teksti, kaytto = llm.kysy(viestit, malli, env, hae)
     try:
         return jasenna_analyytikko(teksti), kaytto

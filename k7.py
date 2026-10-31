@@ -30,6 +30,7 @@ import llm
 import mittarit as mit
 import notify
 import rajat
+import silmukka
 import tapahtumat
 
 K7_VIIKKO_KIINTIO = 3
@@ -337,6 +338,12 @@ def aja_hypoteesi(rek, data, hid, nimi, spec, perhe, **kw):
         rek.commit()
         return None, "%s: virhe testissa (%s)" % (nimi, type(e).__name__)
     verd = "EHDOLLA KELPAA" if kelpaa(a) else "EI KELPAA"
+    if silmukka.kaytossa():   # oppiva silmukka: mitattu tulos havaintotiedostoon (vain walk-forward OOS, holdout koskematta)
+        try:
+            silmukka.kirjaa_havainnot(silmukka.HAVAINTO_POLKU, [silmukka.k7_havainto(spec, a, verd, datetime.now(timezone.utc).date())],
+                                      datetime.now(timezone.utc).date())
+        except (silmukka.Havaintovirhe, OSError):
+            pass
     rek.execute("UPDATE k7_hypoteesit SET tila='valmis', tulos=?, verdikti=? WHERE id=?", (json.dumps(a, default=str), verd, hid))
     rek.commit()
     return a, t
