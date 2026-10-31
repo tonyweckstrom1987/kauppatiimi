@@ -11,6 +11,7 @@ import config
 import llm
 import mittarit
 import notify
+import raportti as verorap
 import rajat
 import salkku
 
@@ -157,6 +158,7 @@ def salkun_rivi(nimi, s, tanaan):
     rivit = ["%s: %.0f USDT | alusta %+.2f %% | viikko %+.2f %%" % (nimi, viim_a, _pct(viim_a, alku_a), _pct(viim_a, viikko_a)),
              "  kaupat %d (kulut %.1f USDT), paatospaivia %d, hylattyja %d%s" % (
                  len(vk_kaupat), kulut, len(vk_p), hylatyt, ", max-drawdown %.1f %%" % (100 * mdd["max_dd"]) if mdd else "")]
+    rivit.append("  " + verorap.rivi(s["kaupat"], viim_p[:4]))
     if s["tila"].get("jarru") == "1":
         rivit.append("  HATAJARRU LUKOSSA")
     return rivit, {"paiva": viim_p, "alku": s["tila"].get("aloituspaiva"), "tuotto": _pct(viim_a, alku_a), "viikko": _pct(viim_a, viikko_a), "arvot": arvot}

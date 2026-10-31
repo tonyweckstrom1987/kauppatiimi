@@ -3,6 +3,7 @@ HUOM: vain eteenpain (forward) -paperikauppa: menneisyyden LLM-backtest on saast
 import argparse
 import json
 import os
+import sqlite3
 import sys
 import time
 from datetime import date, datetime, timedelta, timezone
@@ -13,6 +14,7 @@ import db
 import llm
 import mittarit
 import notify
+import raportti as verorap
 import rajat
 import salkku
 import taulukko
@@ -150,6 +152,11 @@ def raportti(tulos, sal, markkina):
     except salkku.Datavirhe:
         rivi += " | vertailu ei saatavilla"
     rivit.append(rivi)
+    try:
+        kaupat = sal.execute("SELECT paiva, symbol, puoli, maara, hinta, kulu FROM kaupat ORDER BY id").fetchall()
+        rivit.append(verorap.rivi(kaupat, tulos["paiva"][:4]))
+    except sqlite3.Error as e:
+        rivit.append("Realisoitunut tulos: ei saatavilla (%s)" % type(e).__name__)
     return "\n".join(rivit)
 
 
