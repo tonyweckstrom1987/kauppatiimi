@@ -237,6 +237,21 @@ def pp(x):
     return "%+.2f %%" % (x * 100)
 
 
+def laskentatapa():
+    """Vertailujen laskentatapa raporttiin. Kulu luetaan vakiosta KULU."""
+    kulu = "%.2f %%" % (KULU * 100)
+    return [
+        "Vertailujen laskentatapa: ostohinta = ostop\u00e4iv\u00e4n avaushinta + kulu %s per osto (KULU); "
+        "arvostus = p\u00e4iv\u00e4n p\u00e4\u00e4t\u00f6shinta, loppuarvo jakson viimeisen p\u00e4iv\u00e4n p\u00e4\u00e4t\u00f6shinta; "
+        "myyntikulua ei v\u00e4hennet\u00e4." % kulu,
+        "  Ostohetki vertailuittain: osta ja pida = jakson 1. p\u00e4iv\u00e4, koko p\u00e4\u00e4oma; "
+        "p\u00e4\u00e4oman jako erin ja jatkuva s\u00e4\u00e4st\u00f6 = kunkin kalenterikuukauden 1. jakson p\u00e4iv\u00e4; "
+        "B = jakson 1. p\u00e4iv\u00e4 ja sen j\u00e4lkeen %d pv v\u00e4lein." % VALI_B,
+        "  Tuoton jakaja: s\u00e4\u00e4st\u00f6ss\u00e4 talletetut eik\u00e4 koko p\u00e4\u00e4oma, muissa jakson alun p\u00e4\u00e4oma (kassa mukana). "
+        "Salkkujen tuotto on salkun oma arvosarja kannasta.",
+    ]
+
+
 def muotoile(t, tuoreus_teksti):
     rivit = []
     rivit.append("Paperisalkkujen seuranta (vain prosentteja, ei sijoitusneuvo)")
@@ -244,6 +259,7 @@ def muotoile(t, tuoreus_teksti):
     rivit.append("Jakso: %s .. %s, p\u00e4ivi\u00e4 %d (tavoite v\u00e4hint\u00e4\u00e4n %d, arvio t\u00e4yttymisest\u00e4 %s)" % (
         t["alku"], t["loppu"], t["paivia"], TAVOITE_PAIVAT,
         t["alku"] + timedelta(days=TAVOITE_PAIVAT - 1)))
+    rivit.extend(laskentatapa())
     for s in t["salkut"]:
         rivit.append("")
         rivit.append("%s: tuotto kulujen j\u00e4lkeen %s, suurin pudotus %.2f %%" % (
