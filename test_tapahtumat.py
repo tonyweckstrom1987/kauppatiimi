@@ -24,6 +24,11 @@ class TapahtumatTesti(unittest.TestCase):
         self.assertEqual((r[0]["ryhma"], r[0]["tokens_in"], r[0]["tulos"]), ("flash", 10, "ok"))
         self.assertEqual(r[1]["virhekoodi"], "LLMVirhe")
 
+    def test_kaikki_hylatty_ja_hylkaykset_kirjataan(self):
+        self.assertTrue(th.kirjaa("k7_kuiva", "kaikki_hylatty", polku=self.p, hylkaykset="nimi_puuttuu:3"))
+        r = rivit(self.p)[0]
+        self.assertEqual((r["tulos"], r["hylkaykset"]), ("kaikki_hylatty", "nimi_puuttuu:3"))
+
     def test_tuntematon_kentta_pudotetaan(self):
         th.kirjaa("paiva", "ok", polku=self.p, strategia="salainen", hinta=123.4, ryhma="pro")
         r = rivit(self.p)[0]

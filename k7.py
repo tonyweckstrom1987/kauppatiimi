@@ -115,6 +115,30 @@ def tarkista_spec(o):
             "kiinteat": dict(sorted(kiinteat.items())), "ruudukko": dict(sorted(siisti_r.items())), "ruudukon_koko": koko}
 
 
+HYLKAYSKOODIT = (   # (viestin osa, lyhyt koodi); jarjestys on tarkea (tarkimmat ensin)
+    ("ruudukko liian suuri", "ruudukko_suuri"), ("eivat ole olioita", "kentat_ei_olioita"), ("ruudukko ", "ruudukko_tyhja"),
+    ("spec ei ole olio", "ei_olio"), ("nimi puuttuu", "nimi_puuttuu"), ("hypoteesi puuttuu", "hyp_lyhyt"),
+    ("tuntematon parametri", "tuntematon_param"), ("ei saa ruudukoida", "ruudukointi_kielletty"),
+    ("sekä kiinteissa", "param_kahdesti"), ("puuttuvat parametrit", "param_puuttuu"), ("ei sallittu", "arvo_ei_sallittu"),
+)
+
+
+def hylkaykset_koodeina(hylatyt):
+    """Hylkaysviestit -> 'koodi:lkm,koodi:lkm' (suurin ensin). Ei speksien sisaltoa: vain kiintea koodisto, tuntematon = 'muu'."""
+    lask = {}
+    for v in hylatyt:
+        koodi = next((k for osa, k in HYLKAYSKOODIT if osa in str(v)), "muu")
+        lask[koodi] = lask.get(koodi, 0) + 1
+    return ",".join("%s:%d" % kv for kv in sorted(lask.items(), key=lambda kv: (-kv[1], kv[0])))
+
+
+def ajon_tulos(specit, hylatyt):
+    """ok = vahintaan yksi kelvollinen; kaikki_hylatty = ehdotuksia oli mutta ei yhtaan kelvollista; ei_tietoa = ei ehdotuksia lainkaan."""
+    if specit:
+        return "ok"
+    return "kaikki_hylatty" if hylatyt else "ei_tietoa"
+
+
 def spec_hash(spec):
     kanoninen = json.dumps({"kiinteat": spec["kiinteat"], "ruudukko": spec["ruudukko"]}, sort_keys=True)
     return hashlib.sha256(kanoninen.encode()).hexdigest()[:12]
@@ -375,8 +399,8 @@ def kuiva_ehdotus(rek, a, env_tg):
         print("K7 kuiva (%s): ehdotus epaonnistui (%s)" % (a.malli, syy))
         return 1
     tuplia = sum(1 for sp in specit if rek.execute("SELECT 1 FROM k7_hypoteesit WHERE hash=?", (spec_hash(sp),)).fetchone())
-    tapahtumat.kirjaa("k7_kuiva", "ok" if specit else "ei_tietoa", ryhma=a.malli, malli=malli, ehdotettu=len(specit) + len(hylatyt),
-                      kelvollinen=len(specit), hylatty=len(hylatyt), tuplia=tuplia, kesto_s=round(time.monotonic() - alkoi, 1))
+    tapahtumat.kirjaa("k7_kuiva", ajon_tulos(specit, hylatyt), ryhma=a.malli, malli=malli, ehdotettu=len(specit) + len(hylatyt),
+                      kelvollinen=len(specit), hylatty=len(hylatyt), hylkaykset=hylkaykset_koodeina(hylatyt) or None, tuplia=tuplia, kesto_s=round(time.monotonic() - alkoi, 1))
     print("K7 kuiva (%s): ehdotettu %d, kelvollisia %d, hylattyja %d, duplikaatteja rekisterissä %d" % (
         a.malli, len(specit) + len(hylatyt), len(specit), len(hylatyt), tuplia))
     return 0
@@ -433,8 +457,8 @@ def main(argv=None):
         alkoi = time.monotonic()
         try:
             specit, hylatyt = ehdota(rek, n, rajat.MALLIT[a.malli], llm.lue_env(a.llm_env))
-            tapahtumat.kirjaa("k7", "ok" if specit else "ei_tietoa", ryhma=a.malli, malli=rajat.MALLIT[a.malli], ehdotettu=len(specit) + len(hylatyt),
-                              kelvollinen=len(specit), hylatty=len(hylatyt), kesto_s=round(time.monotonic() - alkoi, 1))
+            tapahtumat.kirjaa("k7", ajon_tulos(specit, hylatyt), ryhma=a.malli, malli=rajat.MALLIT[a.malli], ehdotettu=len(specit) + len(hylatyt),
+                              kelvollinen=len(specit), hylatty=len(hylatyt), hylkaykset=hylkaykset_koodeina(hylatyt) or None, kesto_s=round(time.monotonic() - alkoi, 1))
         except (llm.LLMVirhe, agentit.Vastausvirhe) as e:
             tapahtumat.kirjaa("k7", "virhe", ryhma=a.malli, malli=rajat.MALLIT[a.malli], virhekoodi=type(e).__name__, kesto_s=round(time.monotonic() - alkoi, 1))
             msg = "K7: ehdotus epaonnistui (%s), ei testeja" % e
