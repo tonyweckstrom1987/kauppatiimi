@@ -1,0 +1,11 @@
+[Unit]
+Description=Kauppatiimi: illan paivaretro joka paiva
+
+[Timer]
+# UTC. Paivan salkkuajo on 09:10, joten 22:10 nakee paivan kaupat ja arvot.
+OnCalendar=*-*-* 22:10:00
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target
