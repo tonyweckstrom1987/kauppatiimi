@@ -152,6 +152,30 @@ class TapaB(unittest.TestCase):
             self.assertAlmostEqual(b["tuotto"], 7 / 3.006 - 1, places=9)
 
 
+class Laskentatapa(unittest.TestCase):
+    def teksti(self):
+        with tempfile.TemporaryDirectory() as d:
+            rakenna(d, 20)
+            return s.muotoile(s.laske(d), "x")
+
+    def test_rivi_on_raportissa(self):
+        teksti = self.teksti()
+        self.assertIn("Vertailujen laskentatapa:", teksti)
+        self.assertIn("avaushinta", teksti)
+        self.assertIn("p\u00e4\u00e4t\u00f6shinta", teksti)
+
+    def test_kulun_prosentti_seuraa_vakiota(self):
+        vanha = s.KULU
+        try:
+            for arvo in (vanha, 0.005):
+                s.KULU = arvo
+                rivi = [r for r in self.teksti().splitlines() if r.startswith("Vertailujen laskentatapa:")]
+                self.assertEqual(len(rivi), 1)
+                self.assertIn("kulu %.2f %% per osto" % (arvo * 100), rivi[0])
+        finally:
+            s.KULU = vanha
+
+
 class Kokonaisuus(unittest.TestCase):
     def test_lyhyt_jakso_ei_valia(self):
         with tempfile.TemporaryDirectory() as d:
