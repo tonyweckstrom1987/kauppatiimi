@@ -53,8 +53,16 @@ def laske(rivit):
         ehd = sum(r.get("ehdotettu", 0) for r in rs if isinstance(r.get("ehdotettu"), int))
         kelv = sum(r.get("kelvollinen", 0) for r in rs if isinstance(r.get("kelvollinen"), int))
         tup = sum(r.get("tuplia", 0) for r in rs if isinstance(r.get("tuplia"), int))
+        syyt = Counter()
+        for r in rs:
+            h = r.get("hylkaykset")
+            for osa in h.split(",") if isinstance(h, str) else ():
+                koodi, _, lkm = osa.partition(":")
+                if koodi and lkm.isdigit():
+                    syyt[koodi[:40]] += int(lkm)
         tulos[avain] = {
             "n": n, "ok": c["ok"], "ei_tietoa": c["ei_tietoa"], "virhe": c["virhe"],
+            "kaikki_hylatty": c["kaikki_hylatty"], "hylkayssyyt": dict(syyt.most_common(8)),
             "kelpo_osuus": _osuus(c["ok"] + c["ei_tietoa"], n),
             "virhe_osuus": _osuus(c["virhe"], n),
             "virhekoodit": dict(virheet.most_common(5)),
@@ -109,7 +117,10 @@ def teksti(mittarit, portit, paivia=None):
         return "\n".join(s + ["Ei tapahtumia."])
     for (ajo, ryhma), m in mittarit.items():
         s.append("## %s / %s  (n=%d)" % (ajo, ryhma, m["n"]))
-        s.append("- ok %d, ei_tietoa %d, virhe %d" % (m["ok"], m["ei_tietoa"], m["virhe"]))
+        s.append("- ok %d, ei_tietoa %d, virhe %d" % (m["ok"], m["ei_tietoa"], m["virhe"]) +
+                 (", kaikki_hylatty %d" % m["kaikki_hylatty"] if m["kaikki_hylatty"] else ""))
+        if m["hylkayssyyt"]:
+            s.append("- hylkäyssyyt: " + ", ".join("%s %d" % kv for kv in m["hylkayssyyt"].items()))
         if m["virhekoodit"]:
             s.append("- virhekoodit: " + ", ".join("%s %d" % kv for kv in m["virhekoodit"].items()))
         if m["kesto_mediaani_s"] is not None:

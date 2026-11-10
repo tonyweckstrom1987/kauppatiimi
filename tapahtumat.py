@@ -6,9 +6,9 @@ import re
 import time
 
 POLKU = os.environ.get("KAUPPA_TAPAHTUMAT", "/srv/kauppa/data/tapahtumat.jsonl")
-SALLITUT_KENTAT = ("ajo", "ryhma", "malli", "tulos", "virhekoodi", "tokens_in", "tokens_out", "kesto_s", "ehdotettu", "hylatty", "kelvollinen", "keksitty", "tuplia")
+SALLITUT_KENTAT = ("ajo", "ryhma", "malli", "tulos", "virhekoodi", "tokens_in", "tokens_out", "kesto_s", "ehdotettu", "hylatty", "kelvollinen", "hylkaykset", "keksitty", "tuplia")
 SALAISUUDET = [re.compile(r"sk-[A-Za-z0-9_-]{16,}"), re.compile(r"gh[pousr]_[A-Za-z0-9]{20,}"), re.compile(r"\b\d{6,}:[A-Za-z0-9_-]{30,}\b")]
-TULOKSET = ("ok", "ei_tietoa", "virhe")
+TULOKSET = ("ok", "ei_tietoa", "virhe", "kaikki_hylatty")   # kaikki_hylatty: K7 ehdotti, mutta yksikaan speksi ei lapaissyt tarkistusta
 
 
 def _siivoa(arvo):
