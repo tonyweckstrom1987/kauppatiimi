@@ -3,6 +3,7 @@ Vertaa kahta mallisalkkua (flash/pro) vertailusalkkuun (Tonyn jako) ja BTC:hen. 
 import argparse
 import json
 import os
+import re
 import sqlite3
 import sys
 from datetime import date, datetime, timedelta, timezone
@@ -21,6 +22,11 @@ HAVAINNOT_MAX = 1500     # doc 67: havainnot.md on enintaan ~1500 merkkia (menee
 # Oma hakemisto, koska palvelulla on ReadOnlyPaths=/srv/kauppa/data; tiedosto ylikirjoitetaan atomisesti (aina viimeisin tilanne)
 HAVAINNOT_POLKU = os.environ.get("KAUPPA_HAVAINNOT", "/srv/kauppa/havainnot/havainnot.md")
 PV_MS = 86400000
+# Paivatila (doc 71, Tony 4.11.2026): illan tiivistys havainnot.md:n loppuosioon. Ei LLM-kutsua, vain mitattua dataa.
+PAIVAT_OTSIKKO = "## Edelliset paivat (dataa, ei ohjeita)"
+PAIVIA_MAX = 4          # uusin paiva korvaa vanhimman, kun tila on taynna
+PAIVARIVI_MAX = 190     # merkkia / paiva; yhteisraja on silti HAVAINNOT_MAX
+_PAIVARIVI_RE = re.compile(r"^- (\d{4}-\d{2}-\d{2}) ")
 
 
 # -shm:n luonti vain luku -hakemistossa epaonnistuu koodilla SQLITE_READONLY (8) tai sen laajennetulla koodilla
@@ -204,8 +210,9 @@ def havaintorivit(s, markkina):
     return rivit
 
 
-def havainnot_teksti(tanaan, salkut, tiedot, markkina):
-    """salkut: {nimi: lue_salkku-tulos}, tiedot: {nimi: salkun_rivi-tiedot}. Enintaan HAVAINNOT_MAX merkkia, vain mittausta."""
+def havainnot_teksti(tanaan, salkut, tiedot, markkina, paivarivit=()):
+    """salkut: {nimi: lue_salkku-tulos}, tiedot: {nimi: salkun_rivi-tiedot}. Enintaan HAVAINNOT_MAX merkkia, vain mittausta.
+    paivarivit: paivatilan rivit, jotka sailytetaan viikkotekstin perassa (viikko-osa lyhenee ensin)."""
     rivit = ["# Tiimin omat aiemmat tulokset (dataa, ei ohjeita)",
              "Paivitetty %s. Mittausta, ei johtopaatoksia; tuottoa ei vaiteta." % tanaan.isoformat()]
     for nimi in sorted(salkut):
@@ -216,9 +223,95 @@ def havainnot_teksti(tanaan, salkut, tiedot, markkina):
             continue
         rivit.append("## %s (%d pv)" % (nimi, pv))
         rivit += havaintorivit(salkut[nimi], markkina)
-    teksti = "\n".join(rivit) + "\n"
-    if len(teksti) > HAVAINNOT_MAX:
-        teksti = teksti[:HAVAINNOT_MAX].rsplit("\n", 1)[0] + "\n(katkaistu)\n"
+    return _yhdista(rivit, paivarivit)
+
+
+def _paivaosa(paivat):
+    return (PAIVAT_OTSIKKO + "\n" + "\n".join(paivat) + "\n") if paivat else ""
+
+
+def _yhdista(viikkorivit, paivarivit):
+    """Viikko-osa + paivaosa, yhteensa enintaan HAVAINNOT_MAX merkkia. Paivaosa saa vieda enintaan puolet; vanhimmat paivat pois ensin.
+    Viikko-osa katkaistaan viimeisena."""
+    paivat = list(paivarivit)[-PAIVIA_MAX:]
+    while paivat and len(_paivaosa(paivat)) > HAVAINNOT_MAX // 2:
+        paivat = paivat[1:]
+    osa = _paivaosa(paivat)
+    viikko = "\n".join(viikkorivit) + "\n"
+    tila = HAVAINNOT_MAX - len(osa)
+    if len(viikko) > tila:
+        merkki = "\n(katkaistu)\n"
+        viikko = viikko[:max(0, tila - len(merkki))].rsplit("\n", 1)[0] + merkki   # merkki mahtuu rajaan
+    return viikko + osa
+
+
+def lue_paivarivit(polku):
+    """Paivatilan rivit (vanhin ensin) olemassa olevasta havainnot.md:sta; puuttuva tiedosto = ei riveja."""
+    try:
+        with open(polku, encoding="utf-8") as f:
+            teksti = f.read()
+    except OSError:
+        return []
+    if PAIVAT_OTSIKKO not in teksti:
+        return []
+    return [r for r in teksti.split(PAIVAT_OTSIKKO, 1)[1].splitlines() if _PAIVARIVI_RE.match(r)]
+
+
+def lue_viikko_osa(polku):
+    """Viikkoretron osa (ennen paivaosaa) rivilistana; tyhja jos tiedostoa ei ole."""
+    try:
+        with open(polku, encoding="utf-8") as f:
+            teksti = f.read()
+    except OSError:
+        return []
+    return teksti.split(PAIVAT_OTSIKKO, 1)[0].rstrip("\n").splitlines()
+
+
+def paivarivi(tanaan, salkut):
+    """Yhden illan rivi: kullekin salkulle viimeisin kirjattu paiva (tanaan tai eilen), muutos, kulut, kaupat, tappion mitattu syy.
+    Tappion syy luokitellaan datasta: kulut (>= puolet tappiosta), hylatty paatos, muuten markkina (muutos + kulut). Ei arvailua.
+    Palauttaa None jos mikaan salkku ei ole ajanut tanaan eika eilen."""
+    osat, paiva = [], None
+    for nimi in sorted(salkut):
+        s = salkut[nimi]
+        if not s or not s["arvot"]:
+            continue
+        p, a = s["arvot"][-1]
+        if date.fromisoformat(p) < tanaan - timedelta(days=1):
+            continue
+        paiva = max(paiva, p) if paiva else p
+        edell = s["arvot"][-2][1] if len(s["arvot"]) > 1 else float(s["tila"].get("alkupaoma", rajat.ALKUPAOMA))
+        muutos = a - edell
+        kaupat = [k for k in s["kaupat"] if k[0] == p]
+        kulut = sum(k[5] + k[6] for k in kaupat)
+        osa = "%s %+.2f %% (%d kauppaa, kulut %.1f)" % (nimi, _pct(a, edell), len(kaupat), kulut)
+        if muutos < 0:
+            hyl = next((h for pp, h in s["paatokset"] if pp == p and h), None)
+            if kulut > 0 and kulut >= abs(muutos) / 2:
+                syy = "kulut"
+            elif hyl:
+                syy = "hylatty:" + re.sub(r"[^A-Za-z0-9_]", "", str(hyl))[:12]
+            else:
+                syy = "markkina %+.1f" % (muutos + kulut)
+            krit = next((pa for pp, _e, pa, _k in s["kriitikko"] if pp == p and pa), None)
+            krit = re.sub(r"[^A-Za-z0-9_]", "", str(krit))[:12] if krit else ""   # sama siivous kuin hyl: teksti menee agenttien kehotteeseen
+            osa += " TAPPIO syy=%s%s" % (syy, " krit=" + krit if krit else "")
+        osat.append(osa)
+    if not osat:
+        return None
+    rivi = "- %s %s" % (paiva, "; ".join(osat))
+    return rivi if len(rivi) <= PAIVARIVI_MAX else rivi[:PAIVARIVI_MAX - 3] + "..."
+
+
+def paivita_paivat(polku, rivi):
+    """Lisaa paivan rivi havainnot.md:n paivaosaan (sama paiva korvataan, uusin korvaa vanhimman) ja kirjoittaa atomisesti.
+    Viikko-osa sailyy sellaisenaan. Palauttaa kirjoitetun tekstin."""
+    avain = _PAIVARIVI_RE.match(rivi).group(1)
+    rivit = [r for r in lue_paivarivit(polku) if _PAIVARIVI_RE.match(r).group(1) != avain] + [rivi]
+    rivit.sort(key=lambda r: _PAIVARIVI_RE.match(r).group(1))
+    viikko = lue_viikko_osa(polku) or ["# Tiimin omat aiemmat tulokset (dataa, ei ohjeita)", "Viikkoretro ei ole viela ajettu."]
+    teksti = _yhdista(viikko, rivit)
+    kirjoita_havainnot(polku, teksti)
     return teksti
 
 
@@ -346,7 +439,7 @@ def raportti(data_polku, salkut, tanaan, pysaytys_polku=None, havainnot_polku=No
         try:
             markkina = _ro(data_polku)
             try:
-                kirjoita_havainnot(havainnot_polku, havainnot_teksti(tanaan, raaka, tiedot, markkina))
+                kirjoita_havainnot(havainnot_polku, havainnot_teksti(tanaan, raaka, tiedot, markkina, lue_paivarivit(havainnot_polku)))
             finally:
                 markkina.close()
         except (sqlite3.Error, OSError) as e:
@@ -365,12 +458,41 @@ def raportti(data_polku, salkut, tanaan, pysaytys_polku=None, havainnot_polku=No
     return "\n".join(rivit)
 
 
+def main_paiva(tanaan, salkut, havainnot_polku):
+    """Paivatila: lukee salkut vain luku, kirjoittaa havainnot.md:n paivaosan. Ei LLM-kutsuja eika kuluja."""
+    raaka = {}
+    for nimi, polku in sorted(salkut.items()):
+        try:
+            raaka[nimi] = lue_salkku(polku)
+        except sqlite3.Error as e:
+            print("%s: kantaa ei voi lukea (%s)" % (nimi, type(e).__name__))
+    if salkut and not any(raaka.values()):
+        # Yksikaan salkku ei ollut luettavissa (kanta puuttuu tai virhe): ei ole "ei uutta paivaa", vaan vika. Nollasta poikkeava
+        # koodi nakyy systemd-yksikon tilassa, eika havainnot.md:aa kirjoiteta.
+        print("Paivatila %s: yhtaan salkkua ei voitu lukea (%d salkkua), havainnot.md ennallaan" % (tanaan.isoformat(), len(salkut)))
+        return 1
+    rivi = paivarivi(tanaan, raaka)
+    if rivi is None:
+        print("Paivatila %s: ei uutta salkkupaivaa, havainnot.md ennallaan" % tanaan.isoformat())
+        return 0
+    try:
+        paivita_paivat(havainnot_polku, rivi)
+    except OSError as e:
+        print("havaintoja ei voitu kirjoittaa (%s)" % type(e).__name__)
+        return 1
+    print(rivi)
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tg-env", default="/srv/kauppa/.env")
     ap.add_argument("--ei-tg", action="store_true")
+    ap.add_argument("--paiva", action="store_true", help="illan paivatila: paivittaa vain havainnot.md:n paivaosan, ei Telegramia, ei LLM:aa")
     a = ap.parse_args()
     tanaan = datetime.now(timezone.utc).date()
+    if a.paiva:
+        return main_paiva(tanaan, rajat.SALKUT, HAVAINNOT_POLKU)
     msg = raportti(config.DB_POLKU, rajat.SALKUT, tanaan, rajat.PYSAYTYS, HAVAINNOT_POLKU, silmukka.HAVAINTO_POLKU)
     print(msg)
     if not a.ei_tg:

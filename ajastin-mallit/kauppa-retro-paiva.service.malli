@@ -1,0 +1,17 @@
+[Unit]
+Description=Kauppatiimi: illan paivaretro (havainnot.md:n paivaosa, ei LLM:aa, ei Telegramia)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=kauppa
+Group=kauppa
+WorkingDirectory=/srv/kauppa/k1
+ExecStart=/usr/bin/python3 /srv/kauppa/k1/retro.py --paiva
+TimeoutStartSec=120
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadOnlyPaths=/srv/kauppa/data
+ReadWritePaths=-/srv/kauppa/havainnot
